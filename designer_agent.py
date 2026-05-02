@@ -1,58 +1,41 @@
 import json
 from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 
 from agents.base_agent import BaseAgent
 from tools.chem_tools import validate_smiles, canonicalize_smiles
-from config import OPENAI_API_KEY, OPENAI_MODEL, MAX_NOVEL_CANDIDATES
+from config import GROQ_API_KEY, GROQ_MODEL_GENERATE, MAX_NOVEL_CANDIDATES
 
 
 DESIGNER_SYSTEM_PROMPT = """You are an expert in computational catalysis and materials design.
-Your task is to generate novel catalyst candidates as SMILES strings for a target reaction.
+Generate novel catalyst candidates as SMILES strings for a target reaction.
 
-Rules for generation:
-1. Generate diverse candidates spanning different metal centers and support materials.
-2. Prefer earth-abundant metals (Fe, Ni, Co, Cu, Mn, Mo) for sustainability scoring.
-3. Consider known promoters (K, Na, La, Ce) and their electronic effects.
-4. Each SMILES must be chemically valid.
-5. Vary coordination environments: single-atom, nanoparticle, intermetallic.
+Rules:
+1. Generate diverse candidates spanning different metal centers and supports.
+2. Prefer earth-abundant metals (Fe, Ni, Co, Cu, Mn, Mo) for sustainability.
+3. Consider promoters (K, Na, La, Ce) and their electronic effects.
+4. Each SMILES must be chemically plausible (metals in brackets: [Fe], [Ni], etc).
+5. Vary coordination environments: monometallic, bimetallic, promoted.
 
-Return ONLY a JSON object matching this schema:
-{
-  "candidates": [
-    {
-      "name": "Metal/Support-Modifier",
-      "smiles": "SMILES_STRING",
-      "rationale": "Why this catalyst is promising for the reaction",
-      "metal_type": "primary metal symbol",
-      "support_material": "support formula"
-    }
-  ]
-}"""
+You MUST respond with ONLY a valid JSON object, no other text, no markdown:
+{"candidates":[{"name":"Metal/Support","smiles":"SMILES","rationale":"reason","metal_type":"symbol","support_material":"formula"}]}"""
 
 
 class DesignerAgent(BaseAgent):
     """
     Designer Agent (⚗️)
-    Uses GPT-4o with structured output to generate novel catalyst SMILES.
-    Falls back to Groq if OpenAI quota exceeded.
-    Validates each generated SMILES via RDKit before passing downstream.
+    Uses Groq (llama3-70b) with explicit JSON-only prompting to generate novel catalyst SMILES.
+    Validates each SMILES with RDKit before passing downstream.
     """
 
     name = "Designer"
     description = "Generates novel catalyst candidates using generative AI."
 
     def __init__(self):
-        super().__init__(use_groq=False)
-        # Designer uses GPT-4o for higher quality generation
-        self.llm = ChatOpenAI(
-            api_key=OPENAI_API_KEY,
-            model=OPENAI_MODEL,
-            temperature=0.7,
-            max_tokens=3000,
-            response_format={"type": "json_object"},
-        )
+        super().__init__()
+        # Higher temperature for generative diversity
+        self.llm = self._init_llm(temperature=0.7, model=GROQ_MODEL_GENERATE)
 
     def _build_generation_prompt(
         self,
@@ -60,23 +43,35 @@ class DesignerAgent(BaseAgent):
         known_smiles: list[str],
         literature_context: str,
     ) -> str:
+        known_str = "\n".join(known_smiles[:8]) if known_smiles else "None"
+        lit_str = literature_context[:800] if literature_context else "No context available."
         return (
             f"Target reaction: {reaction}\n\n"
-            f"Known catalyst SMILES (avoid duplicates):\n{chr(10).join(known_smiles)}\n\n"
-            f"Relevant literature context:\n{literature_context}\n\n"
-            f"Generate exactly {MAX_NOVEL_CANDIDATES} novel catalyst candidates "
-            f"that are chemically distinct from the known ones."
+            f"Known catalyst SMILES (do not duplicate):\n{known_str}\n\n"
+            f"Relevant literature:\n{lit_str}\n\n"
+            f"Generate exactly {MAX_NOVEL_CANDIDATES} novel catalyst candidates. "
+            f"Return ONLY the JSON object."
         )
 
-    def _parse_and_validate(self, raw_json: str) -> list[dict]:
-        """Parse LLM JSON output and validate each SMILES with RDKit."""
+    def _parse_and_validate(self, raw: str) -> list[dict]:
+        # Strip any accidental markdown fences
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
-            parsed = json.loads(raw_json)
+            parsed = json.loads(cleaned)
             candidates = parsed.get("candidates", [])
         except json.JSONDecodeError:
-            return []
+            # Attempt to extract JSON object if model added preamble
+            start = cleaned.find("{")
+            end = cleaned.rfind("}") + 1
+            if start == -1 or end == 0:
+                return []
+            try:
+                parsed = json.loads(cleaned[start:end])
+                candidates = parsed.get("candidates", [])
+            except json.JSONDecodeError:
+                return []
 
-        valid_candidates = []
+        valid = []
         for c in candidates:
             smiles = c.get("smiles", "")
             canonical = canonicalize_smiles(smiles)
@@ -84,9 +79,8 @@ class DesignerAgent(BaseAgent):
                 c["smiles"] = canonical
                 c["type"] = "novel"
                 c["source_db"] = "AI Generated"
-                valid_candidates.append(c)
-
-        return valid_candidates
+                valid.append(c)
+        return valid
 
     async def run(self, context: dict[str, Any]) -> dict[str, Any]:
         self.set_status("working", "Generating novel SMILES candidates...")
@@ -94,7 +88,6 @@ class DesignerAgent(BaseAgent):
         reaction = context["reaction"]
         known_candidates = context.get("known_candidates", [])
         literature_context = context.get("literature_context", "")
-
         known_smiles = [c.get("smiles", "") for c in known_candidates if c.get("smiles")]
 
         messages = [
@@ -107,13 +100,6 @@ class DesignerAgent(BaseAgent):
         raw_output = await self.invoke_llm(messages)
         novel_candidates = self._parse_and_validate(raw_output)
 
-        # If generation fails validation, fall back to Groq with simpler prompt
-        if not novel_candidates:
-            self.set_status("working", "Retrying with fallback model...")
-            self.llm = self._init_llm(use_groq=True)
-            raw_output = await self.invoke_llm(messages)
-            novel_candidates = self._parse_and_validate(raw_output)
-
         self.set_status("complete", f"Generated {len(novel_candidates)} validated candidates")
 
         return {
@@ -121,7 +107,6 @@ class DesignerAgent(BaseAgent):
             "novel_candidates": novel_candidates,
             "all_candidates": known_candidates + novel_candidates,
             "designer_log": (
-                f"Generated {len(novel_candidates)}/{MAX_NOVEL_CANDIDATES} "
-                f"valid novel candidates"
+                f"Generated {len(novel_candidates)}/{MAX_NOVEL_CANDIDATES} valid novel candidates"
             ),
         }
