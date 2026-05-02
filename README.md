@@ -1,8 +1,7 @@
-# CatalysisAI 🧪⚗️
+# CatalysisAI 
 
-**Team:** Slayer  
-**Solution:** CatalysisAI  
-**Hackathon:** PAN IIT Bangalore — Round 2  
+**Team:** slayers 
+**Our Solution:** CatalysisAI  
 **Client:** GPS Renewables (India's first Ethanol-to-Jet plant)
 
 ---
@@ -15,7 +14,7 @@ Built specifically for GPS Renewables' Ethanol-to-Jet pathway — where discover
 
 ---
 
-## Architecture Overview
+## Architecture (In progress)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -69,7 +68,7 @@ Built specifically for GPS Renewables' Ethanol-to-Jet pathway — where discover
 
 ---
 
-## Repository Structure
+## Repo 
 
 ```
 catalysis-ai/
@@ -170,30 +169,15 @@ npm run dev
 
 ### Environment Variables
 ```
-NEXT_PUBLIC_SUPABASE_URL=your_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key
-GROQ_API_KEY=your_groq_key
-OPENAI_API_KEY=your_openai_key
+GROQ_API_KEY=(*&^%
 CHROMA_PERSIST_DIR=./chroma_db
 ```
 
 ---
 
-## Team Slayer
-
-| Name | Role |
-|------|------|
-| Member 1 | AI/ML — Agent architecture, LangChain workflows |
-| Member 2 | Frontend — Next.js, 3D viewer, animations |
-| Member 3 | Backend — Supabase, API routes, RAG pipeline |
-| Member 4 | Domain — Chemistry validation, demo scripting |
-
----
 
 ## Carbon Impact
 
 CatalysisAI estimates **-2.4 tons CO₂e per batch** for the Ethanol-to-Jet pathway vs conventional jet fuel production. Every candidate is scored on its carbon footprint — making sustainability a first-class metric alongside yield and selectivity.
 
 ---
-
-*Built in 4 days. For GPS Renewables. For India's first Ethanol-to-Jet plant.*
