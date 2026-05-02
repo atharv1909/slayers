@@ -7,7 +7,7 @@ from agents.scout_agent import ScoutAgent
 from agents.designer_agent import DesignerAgent
 from agents.oracle_agent import OracleAgent
 from agents.sage_agent import SageAgent
-from config import SUPABASE_URL, SUPABASE_KEY
+
 
 
 AgentStatusCallback = Callable[[str, str, str], Awaitable[None]]
