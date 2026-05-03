@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
 
-from config import GROQ_API_KEY, GROQ_MODEL
+from config import GROQ_API_KEY, GROQ_MODEL_FAST
 
 
 PATHWAY_TEMPLATES = {
@@ -127,7 +127,7 @@ async def flux_analysis_node(state: PathwayState) -> PathwayState:
 
 
 async def optimize_pathway_node(state: PathwayState) -> PathwayState:
-    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_MODEL, temperature=0.5)
+    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_MODEL_FAST, temperature=0.5)
     flux_summary = json.dumps(state["flux_analysis"], indent=2)
     messages = [
         SystemMessage(content=(
