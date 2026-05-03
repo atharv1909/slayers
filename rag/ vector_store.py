@@ -1,20 +1,21 @@
 import chromadb
 from chromadb.config import Settings
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 
-from config import CHROMA_PERSIST_DIR, OPENAI_API_KEY, EMBEDDING_MODEL
+from config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL, USE_LOCAL_EMBEDDINGS
 
 
 _vector_store: Chroma | None = None
 
 
-def get_embeddings() -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(
-        api_key=OPENAI_API_KEY,
-        model=EMBEDDING_MODEL,
-    )
+def get_embeddings():
+    if USE_LOCAL_EMBEDDINGS:
+        from langchain_community.embeddings import SentenceTransformerEmbeddings
+        return SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
+    # Fallback: any HuggingFace model, still free
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 
 def get_vector_store(docs: list[Document] | None = None) -> Chroma:
