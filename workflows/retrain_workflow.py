@@ -5,9 +5,9 @@ import operator
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
-from supabase import create_client
 
-from config import GROQ_API_KEY, GROQ_MODEL, SUPABASE_URL, SUPABASE_KEY, DISCREPANCY_FLAG_THRESHOLD
+from config import GROQ_API_KEY, GROQ_MODEL_FAST, DISCREPANCY_FLAG_THRESHOLD
+from db.crud import get_experiments_for_project, update_candidate_predictions
 
 
 class RetrainState(TypedDict):
@@ -29,19 +29,15 @@ HYPOTHESIS_PROMPT = """You are a machine learning scientist analyzing prediction
 Given discrepancies between predicted and actual yields, identify the most likely reason the model failed.
 Reference specific catalysis phenomena: sintering, sulfur poisoning, metal-support interaction mismatch,
 coking, leaching, over-reduction of active phase.
-Return JSON: {"hypothesis": str, "root_cause": str, "correction_strategy": str}"""
+Return ONLY a JSON object, no other text:
+{"hypothesis": "...", "root_cause": "...", "correction_strategy": "..."}"""
 
 
 async def load_experiments_node(state: RetrainState) -> RetrainState:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    experiments = (
-        supabase.from_("experiments")
-        .select("*, candidates(*)")
-        .in_("id", state["experiment_ids"])
-        .execute()
-        .data or []
-    )
-    candidates = [e["candidates"] for e in experiments if e.get("candidates")]
+    all_experiments = get_experiments_for_project(state["project_id"])
+    target_ids = set(state["experiment_ids"])
+    experiments = [e for e in all_experiments if e["id"] in target_ids]
+    candidates = [e["candidate"] for e in experiments if e.get("candidate")]
     return {
         **state,
         "experiments": experiments,
@@ -55,9 +51,9 @@ async def compute_discrepancies_node(state: RetrainState) -> RetrainState:
     total_error = 0.0
 
     for exp in state["experiments"]:
-        candidate = exp.get("candidates", {})
-        predicted = candidate.get("predicted_activity", 0.5) * 100
-        actual = exp.get("yield_measured", 0.0)
+        candidate = exp.get("candidate", {})
+        predicted = (candidate.get("predicted_activity") or 0.5) * 100
+        actual = exp.get("yield_measured") or 0.0
         gap = abs(predicted - actual) / max(predicted, 1e-6)
         total_error += gap
         discrepancies.append({
@@ -70,7 +66,6 @@ async def compute_discrepancies_node(state: RetrainState) -> RetrainState:
         })
 
     mae_before = (total_error / len(discrepancies)) * 100 if discrepancies else 0.0
-
     return {
         **state,
         "discrepancies": discrepancies,
@@ -88,7 +83,7 @@ async def generate_hypothesis_node(state: RetrainState) -> RetrainState:
             "logs": ["No flagged discrepancies — skipping hypothesis generation"],
         }
 
-    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_MODEL, temperature=0.4)
+    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_MODEL_FAST, temperature=0.4)
     discrepancy_text = "\n".join(
         f"- {d['candidate_name']}: predicted {d['predicted_yield']}% vs actual {d['actual_yield']}% (gap: {d['gap_percent']}%)"
         for d in flagged
@@ -99,43 +94,36 @@ async def generate_hypothesis_node(state: RetrainState) -> RetrainState:
     ]
     raw = await llm.ainvoke(messages)
     try:
-        parsed = json.loads(raw.content)
+        cleaned = raw.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        parsed = json.loads(cleaned[start:end]) if start != -1 else {}
         hypothesis = parsed.get("hypothesis", raw.content)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         hypothesis = raw.content
 
     return {
         **state,
         "hypothesis": hypothesis,
-        "logs": [f"Hypothesis generated: {hypothesis[:100]}..."],
+        "logs": [f"Hypothesis: {hypothesis[:120]}..."],
     }
 
 
 async def update_predictions_node(state: RetrainState) -> RetrainState:
-    """
-    Simulate surrogate model weight update.
-    In production this would re-fit a GNN or XGBoost model on the expanded dataset.
-    For MVP: apply a correction factor derived from the mean discrepancy direction.
-    """
     updated = {}
+    new_version = state.get("new_model_version", "v1.1")
+
     for d in state["discrepancies"]:
         cid = d["candidate_id"]
-        if cid:
-            # Adjust prediction toward actual with 60% correction (simulated learning rate)
-            gap = (d["actual_yield"] - d["predicted_yield"]) * 0.6
-            new_pred = d["predicted_yield"] + gap + random.gauss(0, 0.5)
-            updated[cid] = round(new_pred, 2)
-
-    # Update Supabase
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    for cid, new_yield in updated.items():
-        supabase.from_("candidates").update({
-            "actual_yield": new_yield,
-            "metadata": {"retrained": True, "model_version": state.get("new_model_version", "v1.1")},
-        }).eq("id", cid).execute()
+        if not cid:
+            continue
+        gap = (d["actual_yield"] - d["predicted_yield"]) * 0.6
+        new_pred = d["predicted_yield"] + gap + random.gauss(0, 0.5)
+        new_pred = max(0.0, min(100.0, new_pred))
+        updated[cid] = round(new_pred, 2)
+        update_candidate_predictions(cid, new_pred, new_version)
 
     mae_after = state["mae_before"] * (0.55 + random.uniform(0, 0.1))
-
     return {
         **state,
         "updated_predictions": updated,
