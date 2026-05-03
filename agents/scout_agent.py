@@ -4,6 +4,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from agents.base_agent import BaseAgent
 from rag.retriever import ChemistryRetriever
 from db.crud import get_candidates_for_project
+
+# Known catalyst databases indexed in our system
 KNOWN_DATABASES = ["Materials Project", "Open Catalyst DB", "BRENDA", "CatDB"]
 
 # Curated seed catalysts for common reactions
@@ -41,7 +43,7 @@ class ScoutAgent(BaseAgent):
     description = "Searches catalyst databases and literature for known candidates."
 
     def __init__(self):
-        super().__init__(use_groq=True)
+        super().__init__()
         self.retriever = ChemistryRetriever()
 
     def _match_reaction_to_seeds(self, reaction: str) -> list[dict]:
