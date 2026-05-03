@@ -1,13 +1,12 @@
 import asyncio
 import time
 from typing import Any, Callable, Awaitable
-from supabase import create_client
 
 from agents.scout_agent import ScoutAgent
 from agents.designer_agent import DesignerAgent
 from agents.oracle_agent import OracleAgent
 from agents.sage_agent import SageAgent
-
+from db.crud import insert_candidates
 
 
 AgentStatusCallback = Callable[[str, str, str], Awaitable[None]]
@@ -19,7 +18,7 @@ class DiscoverySwarm:
     Scout → Designer → Oracle → Sage
 
     Accepts an optional async status_callback(agent_name, status, task)
-    for streaming updates to the frontend via SSE.
+    for streaming agent status updates to the frontend via SSE.
     """
 
     def __init__(self, status_callback: AgentStatusCallback | None = None):
@@ -29,13 +28,11 @@ class DiscoverySwarm:
         self.sage = SageAgent()
         self.agents = [self.scout, self.designer, self.oracle, self.sage]
         self.status_callback = status_callback
-        self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         self.logs: list[str] = []
 
     def _log(self, message: str):
         timestamp = time.strftime("%H:%M:%S")
-        entry = f"[{timestamp}] {message}"
-        self.logs.append(entry)
+        self.logs.append(f"[{timestamp}] {message}")
 
     async def _emit(self, agent_name: str, status: str, task: str):
         if self.status_callback:
@@ -64,47 +61,35 @@ class DiscoverySwarm:
             }
             for c in novel_candidates
         ]
-        self.supabase.from_("candidates").insert(rows).execute()
+        insert_candidates(rows)
 
     async def run(self, project_id: str, reaction: str) -> dict[str, Any]:
-        """
-        Execute full discovery pipeline.
-        Returns final context dict with ranked_candidates, insight_report, logs.
-        """
-        context: dict[str, Any] = {
-            "project_id": project_id,
-            "reaction": reaction,
-        }
+        context: dict[str, Any] = {"project_id": project_id, "reaction": reaction}
 
-        # Scout
         self._log("Scout Agent initializing database search...")
         await self._emit("Scout", "working", "Searching catalyst databases...")
         context = await self.scout.run(context)
         self._log(context.get("scout_log", ""))
         await self._emit("Scout", "complete", "Database search complete")
 
-        # Designer
         self._log("Designer Agent generating novel SMILES...")
         await self._emit("Designer", "working", "Generating novel candidates...")
         context = await self.designer.run(context)
         self._log(context.get("designer_log", ""))
         await self._emit("Designer", "complete", "Novel candidates generated")
 
-        # Oracle
         self._log("Oracle Agent running property predictions...")
         await self._emit("Oracle", "working", "Predicting activity, selectivity, stability...")
         context = await self.oracle.run(context)
         self._log(context.get("oracle_log", ""))
         await self._emit("Oracle", "complete", "Predictions complete")
 
-        # Sage
         self._log("Sage Agent synthesizing insights...")
         await self._emit("Sage", "working", "Synthesizing insights and ranking...")
         context = await self.sage.run(context)
         self._log(context.get("sage_log", ""))
         await self._emit("Sage", "complete", "Discovery complete")
 
-        # Persist novel candidates to Supabase
         novel = context.get("novel_candidates", [])
         await self._save_novel_candidates(novel, project_id)
         self._log(f"Saved {len(novel)} novel candidates to database")
