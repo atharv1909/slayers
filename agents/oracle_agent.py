@@ -80,12 +80,13 @@ class OracleAgent(BaseAgent):
         smiles = candidate.get("smiles", "")
         seed = self._deterministic_seed(smiles)
 
-        # Heuristic base predictions
         base_activity = predict_activity_heuristic(smiles, seed)
         base_selectivity = predict_selectivity_heuristic(smiles, seed)
         base_stability = predict_stability_heuristic(smiles, seed)
 
-        # Call LLM adjustment for any candidate where base confidence is low
+        # Compute confidence first — used to decide whether to call LLM
+        confidence = estimate_uncertainty(smiles, candidate.get("type", "known"))
+
         adjustment = {"activity_adjustment": 0.0, "selectivity_adjustment": 0.0, "uncertainty_flags": []}
         if confidence < self.LLM_CALL_CONFIDENCE_THRESHOLD:
             adjustment = await self._get_llm_adjustment(smiles, reaction)
@@ -93,7 +94,6 @@ class OracleAgent(BaseAgent):
         activity = max(0.0, min(1.0, base_activity + adjustment.get("activity_adjustment", 0.0)))
         selectivity = max(0.0, min(100.0, base_selectivity + adjustment.get("selectivity_adjustment", 0.0)))
         stability = base_stability
-        confidence = estimate_uncertainty(smiles, candidate.get("type", "known"))
 
         uncertainty_flags = adjustment.get("uncertainty_flags", [])
         if confidence < PREDICTION_UNCERTAINTY_THRESHOLD:
