@@ -62,62 +62,64 @@ Built specifically for GPS Renewables' Ethanol-to-Jet pathway — where discover
 └──────────────────────────────────────────────────────────────────────────────┘
 
 # Repo
+
 catalysis-ai/
 │
 ├── README.md
 │
-├── ai/                              ← Python AI Backend (THIS FOLDER)
+├── ai/                          # Python AI Backend
 │   ├── requirements.txt
-│   ├── config.py                    ← API keys, model configs
+│   ├── config.py                # API keys, model configs
 │   │
-│   ├── agents/                      ← LangChain Multi-Agent Swarm
+│   ├── agents/                  # LangChain Multi-Agent Swarm
 │   │   ├── __init__.py
-│   │   ├── base_agent.py            ← Abstract base for all agents
-│   │   ├── scout_agent.py           ← Literature + DB search agent
-│   │   ├── designer_agent.py        ← Generative SMILES agent
-│   │   ├── oracle_agent.py          ← Property prediction agent
-│   │   ├── sage_agent.py            ← Synthesis + ranking agent
-│   │   └── swarm_orchestrator.py    ← LangChain orchestration logic
+│   │   ├── base_agent.py        # Abstract base class
+│   │   ├── scout_agent.py       # Literature + DB search
+│   │   ├── designer_agent.py    # Generative SMILES
+│   │   ├── oracle_agent.py      # Property prediction
+│   │   ├── sage_agent.py        # Synthesis + ranking
+│   │   └── swarm_orchestrator.py
 │   │
-│   ├── workflows/                   ← LangGraph workflow definitions
+│   ├── workflows/               # LangGraph workflows
 │   │   ├── __init__.py
-│   │   ├── discovery_workflow.py    ← Main discovery pipeline graph
-│   │   ├── retrain_workflow.py      ← Model feedback loop
-│   │   └── pathway_workflow.py      ← Metabolic pathway optimization
+│   │   ├── discovery_workflow.py
+│   │   ├── retrain_workflow.py
+│   │   └── pathway_workflow.py
 │   │
-│   ├── rag/                         ← Retrieval Augmented Generation
+│   ├── rag/                     # Retrieval Augmented Generation
 │   │   ├── __init__.py
-│   │   ├── knowledge_base.py        ← Chemistry KB loader + chunker
-│   │   ├── vector_store.py          ← ChromaDB interface
-│   │   └── retriever.py             ← Contextual retrieval for agents
+│   │   ├── knowledge_base.py
+│   │   ├── vector_store.py
+│   │   └── retriever.py
 │   │
-│   ├── tools/                       ← LangChain custom tools
+│   ├── tools/                   # LangChain custom tools
 │   │   ├── __init__.py
-│   │   ├── database_tools.py        ← Database query tools
-│   │   ├── chem_tools.py            ← RDKit + SMILES validation tools
-│   │   └── prediction_tools.py      ← Heuristic property predictors
+│   │   ├── database_tools.py
+│   │   ├── chem_tools.py
+│   │   └── prediction_tools.py
 │   │
-│   ├── data/                        ← DB models, CRUD, seed & index scripts
-│   │   ├── crud.py                  ← All database operations
-│   │   ├── models.py                ← SQLAlchemy models
-│   │   ├── seed_db.py               ← Populate DB with synthetic data
-│   │   └── index_kb.py              ← Index chemistry knowledge base into ChromaDB
+│   ├── data/                    # Database layer
+│   │   ├── crud.py
+│   │   ├── models.py
+│   │   ├── seed_db.py
+│   │   └── index_kb.py
 │   │
-│   └── schemas/                     ← Pydantic data models
+│   └── schemas/                 # Pydantic models
 │       ├── __init__.py
 │       ├── candidate.py
 │       └── experiment.py
 │
-└── frontend/                        ← Vite + React App
+└── frontend/                    # Vite + React App
     ├── src/
     │   ├── app/
     │   ├── components/
     │   ├── lib/
     │   └── stores/
+    │
     ├── package.json
     └── ...
 
-#AI Pipeline — How It Works
+# AI Pipeline — How It Works
 1. Discovery Swarm (Multi-Agent)
 When a scientist inputs a reaction like "CO2 + H2 → Methanol":
 
